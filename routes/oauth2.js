@@ -72,44 +72,50 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
         if (row.client_id !== client.id) { return cb(null, false); }
         if (row.redirect_uri !== redirectURI) { return cb(null, false); }
         if (Date.parse(row.expires_at + 'Z') <= now) { return cb(null, false); }
-        return next(null, row);
+        var ctx = {
+          clientID: row.client_id,
+          userID: row.user_id,
+          grantID: row.grant_id,
+          scope: row.scope ? row.scope.split(' ') : null,
+          sessionID: row.session_id
+        };
+        return next(null, ctx);
       });
     },
-    function(row, next) {
+    function(ctx, next) {
       crypto.randomBytes(64, function(err, buffer) {
         if (err) { return cb(err); }
         var accessToken = buffer.toString('base64');
         var expiresAt = new Date(Date.now() + 3600000); // 1 hour from now
         db.run('INSERT INTO access_tokens (user_id, client_id, scope, expires_at, token) VALUES (?, ?, ?, ?, ?)', [
-          row.user_id,
-          row.client_id,
-          row.scope,
+          ctx.userID,
+          ctx.clientID,
+          ctx.scope,
           dateFormat(expiresAt, 'yyyy-mm-dd HH:MM:ss', true),
           accessToken,
         ], function(err) {
           if (err) { return cb(err); }
-          return next(null, row, accessToken, { expires_in: 3600 });
+          return next(null, ctx, accessToken, { expires_in: 3600 });
         });
       });
     },
-    function(row, accessToken, params, next) {
+    function(ctx, accessToken, params, next) {
       crypto.randomBytes(64, function(err, buffer) {
         if (err) { return cb(err); }
         var refreshToken = buffer.toString('base64');
         var expiresAt = new Date(Date.now() + 2592000000); // 30 days from now
         db.run('INSERT INTO refresh_tokens (grant_id, expires_at, token) VALUES (?, ?, ?)', [
-          row.grant_id,
+          ctx.grantID,
           dateFormat(expiresAt, 'yyyy-mm-dd HH:MM:ss', true),
           refreshToken,
         ], function(err) {
           if (err) { return cb(err); }
-          return next(null, row, accessToken, refreshToken, params);
+          return next(null, ctx, accessToken, refreshToken, params);
         });
       });
     },
-    function(row, accessToken, refreshToken, params, next) {
-      var scope = row.scope ? row.scope.split(' ') : [];
-      if (scope.indexOf('device_sso') == -1) { return next(null, row, accessToken, refreshToken, params); }
+    function(ctx, accessToken, refreshToken, params, next) {
+      if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx, accessToken, refreshToken, params); }
       
       crypto.randomBytes(64, function(err, buffer) {
         if (err) { return cb(err); }
@@ -120,23 +126,23 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
         ], function(err) {
           if (err) { return cb(err); }
           params.device_secret = deviceSecret;
-          return next(null, row, accessToken, refreshToken, params);
+          return next(null, ctx, accessToken, refreshToken, params);
         });
       });
     },
-    function(row, accessToken, refreshToken, params, next) {
-      var scope = row.scope ? row.scope.split(' ') : [];
-      if (scope.indexOf('openid') == -1) { return next(null, row, accessToken, refreshToken, params); }
+    function(ctx, accessToken, refreshToken, params, next) {
+      var scope = ctx.scope || [];
+      if (scope.indexOf('openid') == -1) { return next(null, ctx, accessToken, refreshToken, params); }
       
-      db.get('SELECT * FROM users WHERE id = ?', [ row.user_id ], function(err, user) {
+      db.get('SELECT * FROM users WHERE id = ?', [ ctx.userID ], function(err, user) {
         if (err) { return cb(err); }
         if (!user) { return cb(new Error('Failed to resolve user')); }
         
         var now = Date.now();
         var claims = {
           iss: 'https://server.example.com',
-          sub: String(row.user_id),
-          aud: String(row.client_id)
+          sub: String(ctx.userID),
+          aud: String(ctx.clientID)
         };
         if (scope.indexOf('profile') != -1) {
           if (user.name) { claims.name = user.name; }
@@ -150,7 +156,7 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
           if (user.phone_number) { claims.phone_number = user.phone_number; }
           if (user.phone_number_verified) { claims.phone_number_verified = user.phone_number_verified; }
         }
-        claims.sid = row.session_id;
+        claims.sid = ctx.sessionID;
         claims.iat = Math.floor(now / 1000); // now, in seconds
         claims.exp = Math.floor(now / 1000) + 3600; // 1 hour from now, in seconds
       
@@ -162,10 +168,10 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
           secret: 'has a van',
         });
         params.id_token = idToken;
-        return next(null, row, accessToken, refreshToken, params);
+        return next(null, ctx, accessToken, refreshToken, params);
       });
     }
-  ], function(err, row, accessToken, refreshToken, params) {
+  ], function(err, ctx, accessToken, refreshToken, params) {
     if (err) { return cb(err); }
     return cb(null, accessToken, refreshToken, params);
   });
