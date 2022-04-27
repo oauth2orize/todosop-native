@@ -22,6 +22,15 @@ db.serialize(function() {
     redirect_uri TEXT \
   )");
   
+  db.run("CREATE TABLE IF NOT EXISTS devices ( \
+    id INTEGER PRIMARY KEY, \
+    secret TEXT UNIQUE, \
+    secret_expires_at DATETIME, \
+    name TEXT, \
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, \
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP \
+  )");
+  
   db.run("CREATE TABLE IF NOT EXISTS grants ( \
     id INTEGER PRIMARY KEY, \
     user_id INTEGER NOT NULL, \

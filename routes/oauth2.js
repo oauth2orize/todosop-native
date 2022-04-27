@@ -109,6 +109,23 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
     },
     function(row, accessToken, refreshToken, params, next) {
       var scope = row.scope ? row.scope.split(' ') : [];
+      if (scope.indexOf('device_sso') == -1) { return next(null, row, accessToken, refreshToken, params); }
+      
+      crypto.randomBytes(64, function(err, buffer) {
+        if (err) { return cb(err); }
+        var deviceSecret = buffer.toString('base64');
+        
+        db.run('INSERT INTO devices (secret) VALUES (?)', [
+          deviceSecret
+        ], function(err) {
+          if (err) { return cb(err); }
+          params.device_secret = deviceSecret;
+          return next(null, row, accessToken, refreshToken, params);
+        });
+      });
+    },
+    function(row, accessToken, refreshToken, params, next) {
+      var scope = row.scope ? row.scope.split(' ') : [];
       if (scope.indexOf('openid') == -1) { return next(null, row, accessToken, refreshToken, params); }
       
       db.get('SELECT * FROM users WHERE id = ?', [ row.user_id ], function(err, user) {
