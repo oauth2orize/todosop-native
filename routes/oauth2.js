@@ -79,10 +79,26 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
           scope: row.scope ? row.scope.split(' ') : null,
           sessionID: row.session_id
         };
-        return next(null, ctx);
+        return next(null, ctx, {});
       });
     },
-    function(ctx, next) {
+    function(ctx, params, next) {
+      if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx); }
+      
+      crypto.randomBytes(64, function(err, buffer) {
+        if (err) { return cb(err); }
+        var deviceSecret = buffer.toString('base64');
+        
+        db.run('INSERT INTO devices (secret) VALUES (?)', [
+          deviceSecret
+        ], function(err) {
+          if (err) { return cb(err); }
+          params.device_secret = deviceSecret;
+          return next(null, ctx, params);
+        });
+      });
+    },
+    function(ctx, params, next) {
       crypto.randomBytes(64, function(err, buffer) {
         if (err) { return cb(err); }
         var accessToken = buffer.toString('base64');
@@ -95,7 +111,8 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
           accessToken,
         ], function(err) {
           if (err) { return cb(err); }
-          return next(null, ctx, accessToken, { expires_in: 3600 });
+          params.expires_in = 3600;
+          return next(null, ctx, accessToken, params);
         });
       });
     },
@@ -110,22 +127,6 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
           refreshToken,
         ], function(err) {
           if (err) { return cb(err); }
-          return next(null, ctx, accessToken, refreshToken, params);
-        });
-      });
-    },
-    function(ctx, accessToken, refreshToken, params, next) {
-      if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx, accessToken, refreshToken, params); }
-      
-      crypto.randomBytes(64, function(err, buffer) {
-        if (err) { return cb(err); }
-        var deviceSecret = buffer.toString('base64');
-        
-        db.run('INSERT INTO devices (secret) VALUES (?)', [
-          deviceSecret
-        ], function(err) {
-          if (err) { return cb(err); }
-          params.device_secret = deviceSecret;
           return next(null, ctx, accessToken, refreshToken, params);
         });
       });
