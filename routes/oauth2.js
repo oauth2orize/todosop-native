@@ -90,7 +90,7 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
         db.run('INSERT INTO access_tokens (user_id, client_id, scope, expires_at, token) VALUES (?, ?, ?, ?, ?)', [
           ctx.userID,
           ctx.clientID,
-          ctx.scope,
+          ctx.scope.join(' '),
           dateFormat(expiresAt, 'yyyy-mm-dd HH:MM:ss', true),
           accessToken,
         ], function(err) {
