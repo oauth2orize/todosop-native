@@ -60,7 +60,7 @@ as.grant(oauth2orize.grant.code(function issue(client, redirectURI, user, ares, 
   });
 }));
 
-as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, cb) {
+as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, body, cb) {
   async.waterfall([
     function(next) {
       var now = Date.now();
@@ -83,16 +83,30 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
       });
     },
     function(ctx, params, next) {
-      if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx); }
+      if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx, params); }
+      
+      var deviceSecret = body.device_secret;
+      if (!deviceSecret) { return next(null, ctx, params); }
+      db.get('SELECT * FROM devices WHERE secret = ?', [ deviceSecret ], function(err, row) {
+        if (err) { return cb(err); }
+        if (!row) { return next(null, ctx, params); }
+        ctx.deviceID = row.id;
+        params.device_secret = deviceSecret;
+        return next(null, ctx, params);
+      });
+    },
+    function(ctx, params, next) {
+      if (ctx.deviceID) { return next(null, ctx, params); }
+      if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx, params); }
       
       crypto.randomBytes(64, function(err, buffer) {
         if (err) { return cb(err); }
         var deviceSecret = buffer.toString('base64');
-        
         db.run('INSERT INTO devices (secret) VALUES (?)', [
           deviceSecret
         ], function(err) {
           if (err) { return cb(err); }
+          ctx.deviceID = this.lastID;
           params.device_secret = deviceSecret;
           return next(null, ctx, params);
         });
