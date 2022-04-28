@@ -85,6 +85,8 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
     function(ctx, params, next) {
       if (!ctx.scope || ctx.scope.indexOf('device_sso') == -1) { return next(null, ctx, params); }
       
+      // https://openid.net/specs/openid-connect-native-sso-1_0.html
+      
       var deviceSecret = body.device_secret;
       if (!deviceSecret) { return next(null, ctx, params); }
       db.get('SELECT * FROM devices WHERE secret = ?', [ deviceSecret ], function(err, row) {
@@ -172,6 +174,7 @@ as.exchange(oauth2orize.exchange.code(function issue(client, code, redirectURI, 
           if (user.phone_number_verified) { claims.phone_number_verified = user.phone_number_verified; }
         }
         claims.sid = ctx.sessionID;
+        // TODO: add ds_hash claim
         claims.iat = Math.floor(now / 1000); // now, in seconds
         claims.exp = Math.floor(now / 1000) + 3600; // 1 hour from now, in seconds
       
